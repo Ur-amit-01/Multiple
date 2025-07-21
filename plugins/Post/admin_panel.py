@@ -267,19 +267,31 @@ async def restore_data(client, message):
         return await message.reply("⚠️ <b>Please reply to a backup file</b>")
     
     try:
-        msg = await message.reply("🔄 <b>Restoring data...</b>")
+        msg = await message.reply("🔄 <b>Restoring data... This will replace all existing channels!</b>")
         file = await message.reply_to_message.download()
         
         with open(file, "r") as f:
             backup = json.load(f)
         
-        # Restore channels
+        # Clear existing channels first
+        await db.channels.delete_many({})
+        
+        # Restore channels to group 0
         channels_count = 0
         for channel in backup.get("channels", []):
-            await db.add_channel(channel["_id"], channel.get("name"))
+            await db.channels.insert_one({
+                "_id": f"{channel['_id']}_0",  # Composite key for group 0
+                "channel_id": channel["_id"],
+                "name": channel.get("name", ""),
+                "group": "0",  # All restored channels go to group 0
+                "added_date": datetime.now(),
+                "post_count": 0,
+                "last_post": None
+            })
             channels_count += 1
         
-        # Restore admins
+        # Clear and restore admins (optional - remove if you don't want to replace admins)
+        await db.admins.delete_many({})
         admins_count = 0
         for admin in backup.get("admins", []):
             await db.add_admin(admin["_id"])
@@ -288,8 +300,8 @@ async def restore_data(client, message):
         os.remove(file)
         await msg.edit(
             f"✅ <b>Restore completed successfully!</b>\n\n"
-            f"📢 <b>Channels restored:</b> <code>{channels_count}</code>\n"
-            f"👑 <b>Admins restored:</b> <code>{admins_count}</code>\n"
+            f"📢 <b>Channels replaced:</b> <code>{channels_count}</code> (all in group 0)\n"
+            f"👑 <b>Admins replaced:</b> <code>{admins_count}</code>\n"
             f"📅 <b>Backup date:</b> <code>{backup.get('backup_date', 'Unknown')}</code>"
         )
         
